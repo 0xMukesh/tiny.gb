@@ -1,0 +1,243 @@
+package cpu
+
+type Instruction struct {
+	mnemonic string
+	bytes    uint
+	ticks    uint
+	handler  func(opcode uint8)
+}
+
+func NewInstruction(mnemonic string, bytes, ticks uint, handler func(opcode uint8)) Instruction {
+	return Instruction{
+		mnemonic: mnemonic,
+		bytes:    bytes,
+		ticks:    ticks,
+		handler:  handler,
+	}
+}
+
+func (c *CPU) buildInstructions() {
+	c.instructions = map[uint8]Instruction{
+		0x00: NewInstruction("NOP", 1, 4, c.nop),
+		0x76: NewInstruction("HALT", 1, 4, c.halt),
+
+		0x40: NewInstruction("LD B, B", 1, 4, c.nop),
+		0x41: NewInstruction("LD B, C", 1, 4, c.ld_r8_r8),
+		0x42: NewInstruction("LD B, D", 1, 4, c.ld_r8_r8),
+		0x43: NewInstruction("LD B, E", 1, 4, c.ld_r8_r8),
+		0x44: NewInstruction("LD B, H", 1, 4, c.ld_r8_r8),
+		0x45: NewInstruction("LD B, L", 1, 4, c.ld_r8_r8),
+		0x46: NewInstruction("LD B, [HL]", 1, 8, c.ld_r8_hl),
+		0x47: NewInstruction("LD B, A", 1, 4, c.ld_r8_r8),
+
+		0x48: NewInstruction("LD C, B", 1, 4, c.ld_r8_r8),
+		0x49: NewInstruction("LD C, C", 1, 4, c.nop),
+		0x4a: NewInstruction("LD C, D", 1, 4, c.ld_r8_r8),
+		0x4b: NewInstruction("LD C, E", 1, 4, c.ld_r8_r8),
+		0x4c: NewInstruction("LD C, H", 1, 4, c.ld_r8_r8),
+		0x4d: NewInstruction("LD C, L", 1, 4, c.ld_r8_r8),
+		0x4e: NewInstruction("LD C, [HL]", 1, 8, c.ld_r8_hl),
+		0x4f: NewInstruction("LD C, A", 1, 4, c.ld_r8_r8),
+
+		0x50: NewInstruction("LD D, B", 1, 4, c.ld_r8_r8),
+		0x51: NewInstruction("LD D, C", 1, 4, c.ld_r8_r8),
+		0x52: NewInstruction("LD D, D", 1, 4, c.nop),
+		0x53: NewInstruction("LD D, E", 1, 4, c.ld_r8_r8),
+		0x54: NewInstruction("LD D, H", 1, 4, c.ld_r8_r8),
+		0x55: NewInstruction("LD D, L", 1, 4, c.ld_r8_r8),
+		0x56: NewInstruction("LD D, [HL]", 1, 8, c.ld_r8_hl),
+		0x57: NewInstruction("LD D, A", 1, 4, c.ld_r8_r8),
+
+		0x58: NewInstruction("LD E, B", 1, 4, c.ld_r8_r8),
+		0x59: NewInstruction("LD E, C", 1, 4, c.ld_r8_r8),
+		0x5a: NewInstruction("LD E, D", 1, 4, c.ld_r8_r8),
+		0x5b: NewInstruction("LD E, E", 1, 4, c.nop),
+		0x5c: NewInstruction("LD E, H", 1, 4, c.ld_r8_r8),
+		0x5d: NewInstruction("LD E, L", 1, 4, c.ld_r8_r8),
+		0x5e: NewInstruction("LD E, [HL]", 1, 8, c.ld_r8_hl),
+		0x5f: NewInstruction("LD E, A", 1, 4, c.ld_r8_r8),
+
+		0x60: NewInstruction("LD H, B", 1, 4, c.ld_r8_r8),
+		0x61: NewInstruction("LD H, C", 1, 4, c.ld_r8_r8),
+		0x62: NewInstruction("LD H, D", 1, 4, c.ld_r8_r8),
+		0x63: NewInstruction("LD H, E", 1, 4, c.ld_r8_r8),
+		0x64: NewInstruction("LD H, H", 1, 4, c.nop),
+		0x65: NewInstruction("LD H, L", 1, 4, c.ld_r8_r8),
+		0x66: NewInstruction("LD H, [HL]", 1, 8, c.ld_r8_hl),
+		0x67: NewInstruction("LD H, A", 1, 4, c.ld_r8_r8),
+
+		0x68: NewInstruction("LD L, B", 1, 4, c.ld_r8_r8),
+		0x69: NewInstruction("LD L, C", 1, 4, c.ld_r8_r8),
+		0x6a: NewInstruction("LD L, D", 1, 4, c.ld_r8_r8),
+		0x6b: NewInstruction("LD L, E", 1, 4, c.ld_r8_r8),
+		0x6c: NewInstruction("LD L, H", 1, 4, c.ld_r8_r8),
+		0x6d: NewInstruction("LD L, L", 1, 4, c.nop),
+		0x6e: NewInstruction("LD L, [HL]", 1, 8, c.ld_r8_hl),
+		0x6f: NewInstruction("LD L, A", 1, 4, c.ld_r8_r8),
+
+		0x70: NewInstruction("LD [HL], B", 1, 8, c.ld_hl_r8),
+		0x71: NewInstruction("LD [HL], C", 1, 8, c.ld_hl_r8),
+		0x72: NewInstruction("LD [HL], D", 1, 8, c.ld_hl_r8),
+		0x73: NewInstruction("LD [HL], E", 1, 8, c.ld_hl_r8),
+		0x74: NewInstruction("LD [HL], H", 1, 8, c.ld_hl_r8),
+		0x75: NewInstruction("LD [HL], L", 1, 8, c.ld_hl_r8),
+		0x77: NewInstruction("LD [HL], A", 1, 8, c.ld_hl_r8),
+
+		0x78: NewInstruction("LD A, B", 1, 4, c.ld_r8_r8),
+		0x79: NewInstruction("LD A, C", 1, 4, c.ld_r8_r8),
+		0x7a: NewInstruction("LD A, D", 1, 4, c.ld_r8_r8),
+		0x7b: NewInstruction("LD A, E", 1, 4, c.ld_r8_r8),
+		0x7c: NewInstruction("LD A, H", 1, 4, c.ld_r8_r8),
+		0x7d: NewInstruction("LD A, L", 1, 4, c.ld_r8_r8),
+		0x7e: NewInstruction("LD A, [HL]", 1, 8, c.ld_r8_hl),
+		0x7f: NewInstruction("LD A, A", 1, 4, c.nop),
+
+		0x06: NewInstruction("LD B, n8", 2, 8, c.ld_r8_n8),
+		0x0e: NewInstruction("LD C, n8", 2, 8, c.ld_r8_n8),
+		0x16: NewInstruction("LD D, n8", 2, 8, c.ld_r8_n8),
+		0x1e: NewInstruction("LD E, n8", 2, 8, c.ld_r8_n8),
+		0x26: NewInstruction("LD H, n8", 2, 8, c.ld_r8_n8),
+		0x2e: NewInstruction("LD L, n8", 2, 8, c.ld_r8_n8),
+		0x36: NewInstruction("LD [HL], n8", 2, 12, c.ld_hl_n8),
+		0x3e: NewInstruction("LD A, n8", 2, 8, c.ld_r8_n8),
+
+		0x02: NewInstruction("LD [BC], A", 1, 8, c.ld_r16_a),
+		0x12: NewInstruction("LD [DE], A", 1, 8, c.ld_r16_a),
+		0x22: NewInstruction("LDI [HL], A", 1, 8, c.ldi_hl_a),
+		0x32: NewInstruction("LDD [HL], A", 1, 8, c.ldd_hl_a),
+
+		0x0a: NewInstruction("LD A, [BC]", 1, 8, c.ld_a_r16),
+		0x1a: NewInstruction("LD A, [DE]", 1, 8, c.ld_a_r16),
+		0x2a: NewInstruction("LDI A, HL", 1, 8, c.ldi_a_hl),
+		0x3a: NewInstruction("LDD A, HL", 1, 8, c.ldd_a_hl),
+
+		0xe0: NewInstruction("LDH [a8], A", 2, 12, c.ldh_a8_a),
+		0xf0: NewInstruction("LDH A, [a8]", 2, 12, c.ldh_a_a8),
+		0xe2: NewInstruction("LDH [C], A", 1, 8, c.ldh_c_a),
+		0xf2: NewInstruction("LDH A, [C]", 1, 8, c.ldh_a_c),
+
+		0x01: NewInstruction("LD BC, n16", 3, 12, c.ld_r16_n16),
+		0x11: NewInstruction("LD DE, n16", 3, 12, c.ld_r16_n16),
+		0x21: NewInstruction("LD HL, n16", 3, 12, c.ld_r16_n16),
+		0x31: NewInstruction("LD SP, n16", 3, 12, c.ld_r16_n16),
+
+		0xea: NewInstruction("LD [a16], A", 3, 16, c.ld_a16_a),
+		0xfa: NewInstruction("LD A, [a16]", 3, 16, c.la_a_a16),
+		0x08: NewInstruction("LD [a16], SP", 3, 20, c.ld_a16_sp),
+		0xf9: NewInstruction("LD SP, HL", 1, 8, c.ld_sp_hl),
+	}
+}
+
+func (c *CPU) nop(uint8) {}
+func (c *CPU) halt(uint8) {
+	c.isHalted = true
+}
+
+func (c *CPU) ld_r8_r8(opcode uint8) {
+	dest := (opcode & 0x38) >> 3
+	src := opcode & 0x07
+	*c.regs[dest] = *c.regs[src]
+}
+func (c *CPU) ld_r8_hl(opcode uint8) {
+	dest := (opcode & 0x38) >> 3
+	*c.regs[dest] = c.memory[c.readHL()]
+}
+func (c *CPU) ld_hl_r8(opcode uint8) {
+	src := opcode & 0x07
+	c.memory[c.readHL()] = *c.regs[src]
+}
+func (c *CPU) ld_r8_n8(opcode uint8) {
+	dest := (opcode & 0x38) >> 3
+	value := c.readNextByte()
+	*c.regs[dest] = value
+}
+func (c *CPU) ld_hl_n8(opcode uint8) {
+	value := c.readNextByte()
+	c.memory[c.readHL()] = value
+}
+func (c *CPU) ld_r16_a(opcode uint8) {
+	v := (opcode >> 4) & 1
+
+	if v == 0 {
+		c.memory[c.readBC()] = c.a
+	} else {
+		c.memory[c.readDE()] = c.a
+	}
+}
+func (c *CPU) ldi_hl_a(uint8) {
+	c.memory[c.readHL()] = c.a
+	c.writeHL(c.readHL() + 1)
+}
+func (c *CPU) ldd_hl_a(uint8) {
+	c.memory[c.readHL()] = c.a
+	c.writeHL(c.readHL() - 1)
+}
+func (c *CPU) ld_a_r16(opcode uint8) {
+	v := (opcode >> 4) & 1
+
+	if v == 0 {
+		c.a = c.memory[c.readBC()]
+	} else {
+		c.a = c.memory[c.readDE()]
+	}
+}
+func (c *CPU) ldi_a_hl(uint8) {
+	c.a = c.memory[c.readHL()]
+	c.writeHL(c.readHL() + 1)
+}
+func (c *CPU) ldd_a_hl(uint8) {
+	c.a = c.memory[c.readHL()]
+	c.writeHL(c.readHL() - 1)
+}
+func (c *CPU) ldh_a8_a(uint8) {
+	v := c.readNextByte()
+	addr := 0xff00 + uint16(v)
+	c.memory[addr] = c.a
+}
+func (c *CPU) ldh_a_a8(uint8) {
+	v := c.readNextByte()
+	addr := 0xff00 + uint16(v)
+	c.a = c.memory[addr]
+}
+func (c *CPU) ldh_c_a(uint8) {
+	addr := 0xff00 + uint16(c.c)
+	c.memory[addr] = c.a
+}
+func (c *CPU) ldh_a_c(uint8) {
+	addr := 0xff00 + uint16(c.c)
+	c.a = c.memory[addr]
+}
+func (c *CPU) ld_r16_n16(opcode uint8) {
+	v := (opcode & 0x30) >> 4
+	n := c.readNextU16()
+
+	switch v {
+	case 0:
+		c.writeBC(n)
+	case 1:
+		c.writeDE(n)
+	case 2:
+		c.writeHL(n)
+	case 3:
+		c.sp = n
+	}
+	if v == 0 {
+		c.writeBC(n)
+	}
+}
+func (c *CPU) ld_a16_a(uint8) {
+	nn := c.readNextU16()
+	c.memory[nn] = c.a
+}
+func (c *CPU) la_a_a16(uint8) {
+	nn := c.readNextU16()
+	c.a = c.memory[nn]
+}
+func (c *CPU) ld_a16_sp(uint8) {
+	nn := c.readNextU16()
+	c.memory[nn] = uint8(c.sp & 0xff)
+	c.memory[nn+1] = uint8((c.sp & 0xff00) >> 8)
+}
+func (c *CPU) ld_sp_hl(uint8) {
+	c.sp = c.readHL()
+}
