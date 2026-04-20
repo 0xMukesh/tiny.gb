@@ -125,6 +125,18 @@ func (c *CPU) buildInstructions() {
 		0xfa: NewInstruction("LD A, [a16]", 3, 16, c.la_a_a16),
 		0x08: NewInstruction("LD [a16], SP", 3, 20, c.ld_a16_sp),
 		0xf9: NewInstruction("LD SP, HL", 1, 8, c.ld_sp_hl),
+
+		0xc5: NewInstruction("PUSH BC", 1, 16, c.push_r16),
+		0xd5: NewInstruction("PUSH DE", 1, 16, c.push_r16),
+		0xe5: NewInstruction("PUSH HL", 1, 16, c.push_r16),
+		0xf5: NewInstruction("PUSH AF", 1, 16, c.push_r16),
+
+		0xc1: NewInstruction("POP BC", 1, 16, c.pop_r16),
+		0xd1: NewInstruction("POP DE", 1, 16, c.pop_r16),
+		0xe1: NewInstruction("POP HL", 1, 16, c.pop_r16),
+		0xf1: NewInstruction("POP AF", 1, 16, c.pop_r16),
+
+		0xf8: NewInstruction("LD HL, SP + e8", 2, 12, c.ld_hl_sp_e),
 	}
 }
 
@@ -132,7 +144,6 @@ func (c *CPU) nop(uint8) {}
 func (c *CPU) halt(uint8) {
 	c.isHalted = true
 }
-
 func (c *CPU) ld_r8_r8(opcode uint8) {
 	dest := (opcode & 0x38) >> 3
 	src := opcode & 0x07
@@ -240,4 +251,43 @@ func (c *CPU) ld_a16_sp(uint8) {
 }
 func (c *CPU) ld_sp_hl(uint8) {
 	c.sp = c.readHL()
+}
+func (c *CPU) push_r16(opcode uint8) {
+	v := ((opcode & 0x30) >> 4) & 0b11
+
+	switch v {
+	case 0:
+		c.stackPushU16(c.readBC())
+	case 1:
+		c.stackPushU16(c.readDE())
+	case 2:
+		c.stackPushU16(c.readHL())
+	case 3:
+		c.stackPushU16(c.readAF())
+	}
+}
+func (c *CPU) pop_r16(opcode uint8) {
+	v := ((opcode & 0x30) >> 4) & 0b11
+
+	switch v {
+	case 0:
+		c.writeBC(c.stackPopU16())
+	case 1:
+		c.writeDE(c.stackPopU16())
+	case 2:
+		c.writeHL(c.stackPopU16())
+	case 3:
+		c.writeAF(c.stackPopU16())
+	}
+}
+func (c *CPU) ld_hl_sp_e(uint8) {
+	lo := uint32(c.sp & 0xff)
+	e := uint32(c.readNextByte())
+	sum := lo + e
+
+	c.flags.SetIfElseUnset(HalfCarryFlag, (lo^e^sum)>>4&1 == 1)
+	c.flags.SetIfElseUnset(CarryFlag, sum > 0xff)
+
+	result := uint16(int32(c.sp) + int32(e))
+	c.writeHL(result)
 }

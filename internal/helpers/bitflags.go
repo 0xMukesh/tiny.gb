@@ -22,3 +22,11 @@ func (bf *Bitfield) Toggle(flag Bitfield) {
 func (bf *Bitfield) IsSet(flag Bitfield) bool {
 	return (*bf & flag) != 0
 }
+
+func (b *Bitfield) SetIfElseUnset(flag Bitfield, cond bool) {
+	if cond {
+		b.Set(flag)
+	} else {
+		b.Unset(flag)
+	}
+}
