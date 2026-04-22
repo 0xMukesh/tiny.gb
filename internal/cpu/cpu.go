@@ -30,8 +30,9 @@ type CPU struct {
 	memory []uint8
 	prg    []uint8
 
-	instructions map[uint8]Instruction
-	regs         []*uint8
+	instructions           map[uint8]Instruction
+	cbPrefixedInstructions map[uint8]Instruction // prefixed with $cb
+	regs                   []*uint8
 
 	isHalted bool
 }
@@ -40,12 +41,21 @@ func NewCPU(prg []uint8) *CPU {
 	c := &CPU{}
 	c.regs = []*uint8{&c.b, &c.c, &c.d, &c.e, &c.h, &c.l, nil, &c.a}
 	c.buildInstructions()
+	c.buildCbPrefixedInstructions()
 	return c
 }
 
 func (c *CPU) Step() {
 	opcode := c.prg[c.pc]
-	instr, ok := c.instructions[opcode]
+
+	var instr Instruction
+	var ok bool
+	if opcode == 0xcb {
+		instr, ok = c.cbPrefixedInstructions[opcode]
+	} else {
+		instr, ok = c.instructions[opcode]
+	}
+
 	if !ok {
 		panic(fmt.Errorf("invalid instruction: 0x%04x", opcode))
 	}
