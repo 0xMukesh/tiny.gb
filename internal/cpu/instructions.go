@@ -247,6 +247,23 @@ func (c *CPU) buildInstructions() {
 		0x3f: NewInstruction("CCF", 1, 4, c.ccf),
 		0x37: NewInstruction("SCF", 1, 4, c.scf),
 		0x27: NewInstruction("CPL", 1, 4, c.cpl),
+
+		0x03: NewInstruction("INC BC", 1, 8, c.inc_16bit),
+		0x13: NewInstruction("INC DE", 1, 8, c.inc_16bit),
+		0x23: NewInstruction("INC HL", 1, 8, c.inc_16bit),
+		0x33: NewInstruction("INC SP", 1, 8, c.inc_16bit),
+
+		0x0b: NewInstruction("DEC BC", 1, 8, c.dec_16bit),
+		0x1b: NewInstruction("DEC DE", 1, 8, c.dec_16bit),
+		0x2b: NewInstruction("DEC HL", 1, 8, c.dec_16bit),
+		0x3b: NewInstruction("DEC SP", 1, 8, c.dec_16bit),
+
+		0x09: NewInstruction("ADD HL, BC", 1, 8, c.add_hl),
+		0x19: NewInstruction("ADD HL, DE", 1, 8, c.add_hl),
+		0x29: NewInstruction("ADD HL, HL", 1, 8, c.add_hl),
+		0x39: NewInstruction("ADD HL, SP", 1, 8, c.add_hl),
+
+		0xe8: NewInstruction("ADD SP, e8", 2, 16, c.add_sp_e),
 	}
 }
 
@@ -379,16 +396,17 @@ func (c *CPU) pop_r16(opcode uint8) {
 	}
 }
 func (c *CPU) ld_hl_sp_e(uint8) {
-	lo := uint32(c.sp & 0xff)
-	e := uint32(c.readNextByte())
-	sum := lo + e
+	e := int8(c.readNextByte())
+	result := uint16(int32(c.sp) + int32(e))
+
+	halfCarryFlag := (uint16(c.sp&0xf) + uint16(e&0xf)) > 0xf
+	carryFlag := (result & 0xff) < (c.sp & 0xff)
 
 	c.flags.Unset(ZeroFlag)
 	c.flags.Unset(SubtractFlag)
-	c.flags.SetIfCondElseUnset(HalfCarryFlag, (lo^e^sum)>>4&1 == 1)
-	c.flags.SetIfCondElseUnset(CarryFlag, sum > 0xff)
+	c.flags.SetIfCondElseUnset(HalfCarryFlag, halfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, carryFlag)
 
-	result := uint16(int32(c.sp) + int32(e))
 	c.writeHL(result)
 }
 func (c *CPU) add_a(operandType Op8Type, toCarry bool) func(uint8) {
@@ -478,6 +496,67 @@ func (c *CPU) cpl(uint8) {
 	c.flags.Set(SubtractFlag)
 	c.flags.Set(HalfCarryFlag)
 }
+func (c *CPU) inc_16bit(opcode uint8) {
+	v := (opcode & 0x30) >> 4
+
+	switch v {
+	case 0:
+		c.writeBC(c.readBC() + 1)
+	case 1:
+		c.writeDE(c.readDE() + 1)
+	case 2:
+		c.writeHL(c.readHL() + 1)
+	case 3:
+		c.sp++
+	}
+}
+func (c *CPU) dec_16bit(opcode uint8) {
+	v := (opcode & 0x30) >> 4
+
+	switch v {
+	case 0:
+		c.writeBC(c.readBC() - 1)
+	case 1:
+		c.writeDE(c.readDE() - 1)
+	case 2:
+		c.writeHL(c.readHL() - 1)
+	case 3:
+		c.sp--
+	}
+}
+func (c *CPU) add_hl(opcode uint8) {
+	v := (opcode & 0x30) >> 4
+	value := uint16(0)
+
+	switch v {
+	case 0:
+		value = c.readBC()
+	case 1:
+		value = c.readDE()
+	case 2:
+		value = c.readHL()
+	case 3:
+		value = c.sp
+	}
+
+	// ADD HL, rr doesn't set zero flag
+	result := c.perform16BitAddition(c.readHL(), value, false)
+	c.writeHL(result)
+}
+func (c *CPU) add_sp_e(uint8) {
+	e := int8(c.readNextByte())
+	result := uint16(int32(c.sp) + int32(e))
+
+	halfCarryFlag := (uint16(c.sp&0xf) + uint16(e&0xf)) > 0xf
+	carryFlag := (result & 0xff) < (c.sp & 0xff)
+
+	c.flags.Unset(ZeroFlag)
+	c.flags.Unset(SubtractFlag)
+	c.flags.SetIfCondElseUnset(HalfCarryFlag, halfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, carryFlag)
+
+	c.sp = result
+}
 
 // utils
 func (c *CPU) perform8BitArithmetic(operand1, operand2 uint8, toCarry, isSubtract bool) uint8 {
@@ -496,7 +575,7 @@ func (c *CPU) perform8BitArithmetic(operand1, operand2 uint8, toCarry, isSubtrac
 
 	halfCarryFlag := false
 	if isSubtract {
-		halfCarryFlag = (operand1 & 0xf) < (operand2&0xf)+carry
+		halfCarryFlag = (operand1 & 0xf) < ((operand2 & 0xf) + carry)
 	} else {
 		halfCarryFlag = ((operand1 & 0xf) + (operand2 & 0xf) + carry) > 0xf
 	}
@@ -512,6 +591,21 @@ func (c *CPU) perform8BitArithmetic(operand1, operand2 uint8, toCarry, isSubtrac
 
 	c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
 	c.flags.SetIfCondElseUnset(SubtractFlag, isSubtract)
+	c.flags.SetIfCondElseUnset(HalfCarryFlag, halfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, carryFlag)
+
+	return result
+}
+func (c *CPU) perform16BitAddition(operand1, operand2 uint16, setZeroFlag bool) uint16 {
+	sum := uint32(operand1) + uint32(operand2)
+	result := uint16(sum)
+
+	halfCarryFlag := ((operand1 & 0xfff) + (operand2 & 0xfff)) > 0xfff
+	carryFlag := sum > 0xffff
+
+	if setZeroFlag {
+		c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	}
 	c.flags.SetIfCondElseUnset(HalfCarryFlag, halfCarryFlag)
 	c.flags.SetIfCondElseUnset(CarryFlag, carryFlag)
 
