@@ -1,8 +1,6 @@
 package cpu
 
 import (
-	"fmt"
-
 	"github.com/0xmukesh/tiny.gb/internal/helpers"
 )
 
@@ -22,51 +20,106 @@ type CPU struct {
 	h uint8
 	l uint8
 
-	flags *helpers.Bitfield
-	sp    uint16
-	pc    uint16
-	ticks uint
+	flags  *helpers.Bitfield
+	sp     uint16
+	pc     uint16
+	cycles uint
 
 	memory []uint8
 	prg    []uint8
-
-	instructions           map[uint8]Instruction
-	cbPrefixedInstructions map[uint8]Instruction // prefixed with $cb
-	regs                   []*uint8
 
 	isHalted bool
 }
 
 func NewCPU(prg []uint8) *CPU {
 	c := &CPU{}
-	c.regs = []*uint8{&c.b, &c.c, &c.d, &c.e, &c.h, &c.l, nil, &c.a}
-	c.buildInstructions()
-	c.buildCbPrefixedInstructions()
 	return c
 }
 
 func (c *CPU) Step() {
 	opcode := c.prg[c.pc]
-
-	var instr Instruction
-	var ok bool
-	if opcode == 0xcb {
-		instr, ok = c.cbPrefixedInstructions[opcode]
-	} else {
-		instr, ok = c.instructions[opcode]
-	}
-
-	if !ok {
-		panic(fmt.Errorf("invalid instruction: 0x%04x", opcode))
-	}
-
-	instr.handler(opcode)
-	c.ticks += instr.ticks
+	c.execute(opcode)
 	c.pc++
 }
 
 func (c *CPU) IsHalted() bool {
 	return c.isHalted
+}
+
+func (c *CPU) readR8(idx uint8) uint8 {
+	switch idx {
+	case 0:
+		return c.b
+	case 1:
+		return c.c
+	case 2:
+		return c.d
+	case 3:
+		return c.e
+	case 4:
+		return c.h
+	case 5:
+		return c.l
+	case 7:
+		return c.a
+	default:
+		panic("not possible")
+	}
+}
+
+func (c *CPU) writeR8(idx, data uint8) {
+	switch idx {
+	case 0:
+		c.b = data
+	case 1:
+		c.c = data
+	case 2:
+		c.d = data
+	case 3:
+		c.e = data
+	case 4:
+		c.h = data
+	case 5:
+		c.l = data
+	case 7:
+		c.a = data
+	}
+}
+
+func (c *CPU) readR16(idx uint8, useSpOverAf bool) uint16 {
+	switch idx {
+	case 0:
+		return c.readBC()
+	case 1:
+		return c.readDE()
+	case 2:
+		return c.readHL()
+	case 3:
+		if useSpOverAf {
+			return c.sp
+		} else {
+			return c.readAF()
+		}
+	default:
+		panic("not possible")
+	}
+}
+
+func (c *CPU) writeR16(idx uint8, data uint16, useSpOverAf bool) {
+	switch idx {
+	case 0:
+		c.writeBC(data)
+	case 1:
+		c.writeDE(data)
+	case 2:
+		c.writeHL(data)
+	case 3:
+		if useSpOverAf {
+			c.sp = data
+		} else {
+			c.writeAF(data)
+		}
+	}
 }
 
 func (c *CPU) readNextByte() uint8 {
