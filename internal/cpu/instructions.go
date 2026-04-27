@@ -28,9 +28,11 @@ func (c *CPU) execute(opcode uint8) {
 				c.ld_a16_sp()
 			}
 		case 1:
-			switch {
-			case q == 0:
+			switch q {
+			case 0:
 				c.ld_r16_n16(opcode)
+			case 1:
+				c.add_hl_r16(opcode)
 			}
 		case 2:
 			switch y {
@@ -51,19 +53,26 @@ func (c *CPU) execute(opcode uint8) {
 			case 7:
 				c.ld_a_hld()
 			}
+		case 3:
+			switch q {
+			case 0:
+				c.inc_dec_r16(opcode, false)
+			case 1:
+				c.inc_dec_r16(opcode, true)
+			}
 		case 4:
 			switch y {
 			case 6:
-				c.inc_dec(opcode, Bit8HL, false)
+				c.inc_dec_bit8(opcode, Bit8HL, false)
 			default:
-				c.inc_dec(opcode, Bit8R8MiddleThree, false)
+				c.inc_dec_bit8(opcode, Bit8R8MiddleThree, false)
 			}
 		case 5:
 			switch y {
 			case 6:
-				c.inc_dec(opcode, Bit8HL, true)
+				c.inc_dec_bit8(opcode, Bit8HL, true)
 			default:
-				c.inc_dec(opcode, Bit8R8MiddleThree, true)
+				c.inc_dec_bit8(opcode, Bit8R8MiddleThree, true)
 			}
 		case 6:
 			switch y {
@@ -75,7 +84,7 @@ func (c *CPU) execute(opcode uint8) {
 		case 7:
 			switch y {
 			case 4:
-				c.daa() // Decimal adjust accumulator
+				c.daa()
 			case 5:
 				c.cpl()
 			case 6:
@@ -160,6 +169,8 @@ func (c *CPU) execute(opcode uint8) {
 			switch y {
 			case 4:
 				c.ldh_n_a()
+			case 5:
+				c.add_sp_e()
 			case 6:
 				c.ldh_a_n()
 			case 7:
@@ -184,8 +195,8 @@ func (c *CPU) execute(opcode uint8) {
 				c.ld_a_nn()
 			}
 		case 5:
-			switch {
-			case q == 0:
+			switch q {
+			case 0:
 				c.push_r16(opcode)
 			}
 		case 6:
@@ -351,6 +362,7 @@ func (c *CPU) pop_r16(opcode uint8) {
 	rr := (opcode >> 4) & 0x3
 	data := c.stackPopU16()
 	c.writeR16(rr, data, false)
+	c.cycles += 3
 }
 
 func (c *CPU) ld_hl_sp_e() {
@@ -366,26 +378,45 @@ func (c *CPU) ld_hl_sp_e() {
 	c.flags.Unset(SubtractFlag)
 	c.flags.SetIfCondElseUnset(HalfCarryFlag, halfCarryFlag)
 	c.flags.SetIfCondElseUnset(CarryFlag, carryFlag)
+	c.cycles += 3
 }
 
 func (c *CPU) add_sub(opcode uint8, operandType Bit8ArithmeticOperandType, isCarry, isSubtraction bool) {
 	value := c.readBit8OperandType(opcode, operandType)
 	result := c.perform8BitArithmetic(c.a, value, isCarry, isSubtraction)
 	c.a = result
+
+	if operandType == Bit8HL || operandType == Bit8N8 {
+		c.cycles += 2
+	} else {
+		c.cycles += 1
+	}
 }
 
 func (c *CPU) cp(opcode uint8, operandType Bit8ArithmeticOperandType) {
 	value := c.readBit8OperandType(opcode, operandType)
 	c.perform8BitArithmetic(c.a, value, false, true)
+
+	if operandType == Bit8HL || operandType == Bit8N8 {
+		c.cycles += 2
+	} else {
+		c.cycles += 1
+	}
 }
 
-func (c *CPU) inc_dec(opcode uint8, operandType Bit8ArithmeticOperandType, isDec bool) {
+func (c *CPU) inc_dec_bit8(opcode uint8, operandType Bit8ArithmeticOperandType, isDec bool) {
 	value := c.readBit8OperandType(opcode, operandType)
 	beforeCarryFlag := c.flags.IsSet(CarryFlag)
 	result := c.perform8BitArithmetic(value, 1, false, isDec)
 	c.writeBit8OperandType(opcode, operandType, result)
 
 	c.flags.SetIfCondElseUnset(CarryFlag, beforeCarryFlag)
+
+	if operandType == Bit8HL {
+		c.cycles += 3
+	} else {
+		c.cycles += 1
+	}
 }
 
 func (c *CPU) and(opcode uint8, operandType Bit8ArithmeticOperandType) {
@@ -396,6 +427,12 @@ func (c *CPU) and(opcode uint8, operandType Bit8ArithmeticOperandType) {
 	c.flags.Unset(SubtractFlag)
 	c.flags.Set(HalfCarryFlag)
 	c.flags.Unset(CarryFlag)
+
+	if operandType == Bit8HL || operandType == Bit8N8 {
+		c.cycles += 2
+	} else {
+		c.cycles += 1
+	}
 }
 
 func (c *CPU) or(opcode uint8, operandType Bit8ArithmeticOperandType) {
@@ -406,6 +443,12 @@ func (c *CPU) or(opcode uint8, operandType Bit8ArithmeticOperandType) {
 	c.flags.Unset(SubtractFlag)
 	c.flags.Unset(HalfCarryFlag)
 	c.flags.Unset(CarryFlag)
+
+	if operandType == Bit8HL || operandType == Bit8N8 {
+		c.cycles += 2
+	} else {
+		c.cycles += 1
+	}
 }
 
 func (c *CPU) xor(opcode uint8, operandType Bit8ArithmeticOperandType) {
@@ -416,18 +459,28 @@ func (c *CPU) xor(opcode uint8, operandType Bit8ArithmeticOperandType) {
 	c.flags.Unset(SubtractFlag)
 	c.flags.Unset(HalfCarryFlag)
 	c.flags.Unset(CarryFlag)
+
+	if operandType == Bit8HL || operandType == Bit8N8 {
+		c.cycles += 2
+	} else {
+		c.cycles += 1
+	}
 }
 
 func (c *CPU) ccf() {
 	c.flags.Unset(SubtractFlag)
 	c.flags.Unset(HalfCarryFlag)
 	c.flags.Toggle(CarryFlag)
+
+	c.cycles += 1
 }
 
 func (c *CPU) scf() {
 	c.flags.Unset(SubtractFlag)
 	c.flags.Unset(HalfCarryFlag)
 	c.flags.Set(CarryFlag)
+
+	c.cycles += 1
 }
 
 // https://rgbds.gbdev.io/docs/v1.0.1/gbz80.7#DAA
@@ -459,12 +512,66 @@ func (c *CPU) daa() {
 
 	c.flags.SetIfCondElseUnset(ZeroFlag, c.a == 0)
 	c.flags.Unset(HalfCarryFlag)
+
+	c.cycles += 1
 }
 
 func (c *CPU) cpl() {
 	c.a = ^c.a
 	c.flags.Set(SubtractFlag)
 	c.flags.Set(HalfCarryFlag)
+
+	c.cycles += 1
+}
+
+func (c *CPU) inc_dec_r16(opcode uint8, isDec bool) {
+	rr := (opcode >> 4) & 0x3
+	value := c.readR16(rr, true)
+
+	data := value
+	if isDec {
+		data -= 1
+	} else {
+		data += 1
+	}
+
+	c.writeR16(rr, data, true)
+	c.cycles += 2
+}
+
+func (c *CPU) add_hl_r16(opcode uint8) {
+	rr := (opcode >> 4) & 0x3
+	value := c.readR16((opcode>>4)&0x3, true)
+	hl := c.readHL()
+
+	sum := uint32(hl) + uint32(value)
+	result := uint16(sum)
+
+	halfCarryFlag := (hl&0xfff)+(value&0xfff) > 0xfff
+	carryFlag := sum > 0xffff
+
+	c.writeR16(rr, result, true)
+	c.flags.Unset(SubtractFlag)
+	c.flags.SetIfCondElseUnset(HalfCarryFlag, halfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, carryFlag)
+
+	c.cycles += 2
+}
+
+func (c *CPU) add_sp_e() {
+	e := int8(c.readNextByte())
+	result := c.sp + uint16(int16(e))
+
+	halfCarryFlag := (c.sp&0xf)+uint16(uint8(e)&0xf) > 0xf
+	carryFlag := (result & 0xff) < (c.sp & 0xff)
+
+	c.sp = result
+	c.flags.Unset(ZeroFlag)
+	c.flags.Unset(SubtractFlag)
+	c.flags.SetIfCondElseUnset(HalfCarryFlag, halfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, carryFlag)
+
+	c.cycles += 4
 }
 
 func (c *CPU) halt() {
