@@ -28,6 +28,7 @@ type CPU struct {
 	memory []uint8
 	prg    []uint8
 
+	ime      bool
 	isHalted bool
 }
 

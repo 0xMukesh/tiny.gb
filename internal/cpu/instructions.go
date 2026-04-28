@@ -29,8 +29,14 @@ func (c *CPU) execute(opcode uint8) {
 		switch z {
 		case 0:
 			switch {
+			case p == 0 && q == 0:
+				c.nop()
 			case p == 0 && q == 1:
 				c.ld_a16_sp()
+			case p == 1 && q == 1:
+				c.jr_e(true)
+			case (y>>2)&0x1 == 1:
+				c.jr_e(c.decodeConditionFromOpcode(opcode))
 			}
 		case 1:
 			switch q {
@@ -175,6 +181,8 @@ func (c *CPU) execute(opcode uint8) {
 		switch z {
 		case 0:
 			switch y {
+			case 0, 1, 2, 3:
+				c.ret(true, c.decodeConditionFromOpcode(opcode))
 			case 4:
 				c.ldh_n_a()
 			case 5:
@@ -188,11 +196,19 @@ func (c *CPU) execute(opcode uint8) {
 			switch {
 			case q == 0:
 				c.pop_r16(opcode)
+			case q == 1:
+				c.ret(false, true)
+			case y == 3:
+				c.reti()
+			case y == 5:
+				c.jp_hl()
 			case y == 7:
 				c.ld_sp_hl()
 			}
 		case 2:
 			switch y {
+			case 0, 1, 2, 3:
+				c.jp_n16(c.decodeConditionFromOpcode(opcode))
 			case 4:
 				c.ldh_c_a()
 			case 5:
@@ -202,10 +218,26 @@ func (c *CPU) execute(opcode uint8) {
 			case 7:
 				c.ld_a_nn()
 			}
+		case 3:
+			switch y {
+			case 0:
+				c.jp_n16(true)
+			case 6:
+				c.di()
+			case 7:
+				c.ei()
+			}
+		case 4:
+			switch {
+			case (y>>2)&0x1 == 0:
+				c.call_n16(c.decodeConditionFromOpcode(opcode))
+			}
 		case 5:
 			switch q {
 			case 0:
 				c.push_r16(opcode)
+			case 1:
+				c.call_n16(true)
 			}
 		case 6:
 			switch y {
@@ -226,6 +258,8 @@ func (c *CPU) execute(opcode uint8) {
 			case 7:
 				c.cp(opcode, Bit8N8)
 			}
+		case 7:
+			c.rst(opcode)
 		}
 	}
 }
@@ -867,6 +901,85 @@ func (c *CPU) set(opcode uint8, operandType Bit8ArithmeticOperandType) {
 	}
 }
 
+func (c *CPU) jp_n16(condition bool) {
+	if condition {
+		nn := c.readNextU16()
+		c.pc = nn
+		c.cycles += 1
+	}
+
+	c.cycles += 3
+}
+
+func (c *CPU) jp_hl() {
+	c.pc = c.readHL()
+	c.cycles += 1
+}
+
+func (c *CPU) jr_e(condition bool) {
+	if condition {
+		e := int(c.readNextByte())
+		c.pc = uint16(int(c.pc) + e)
+		c.cycles += 1
+	}
+
+	c.cycles += 2
+}
+
+func (c *CPU) call_n16(condition bool) {
+	if condition {
+		nn := c.readNextU16()
+		c.stackPushU16(nn)
+		c.pc = nn
+		c.cycles += 3
+	}
+
+	c.cycles += 3
+}
+
+func (c *CPU) ret(isConditional, condition bool) {
+	if condition {
+		nn := c.stackPopU16()
+		c.pc = nn
+		c.cycles += 3
+	}
+
+	if isConditional {
+		c.cycles += 2
+	} else {
+		c.cycles += 1
+	}
+}
+
+func (c *CPU) reti() {
+	nn := c.stackPopU16()
+	c.pc = nn
+	c.ime = true
+	c.cycles += 4
+}
+
+func (c *CPU) rst(opcode uint8) {
+	idx := (opcode >> 3) & 0x7
+	addr := idx * 8
+	c.stackPushU16(c.pc)
+	c.pc = uint16(addr)
+	c.cycles += 4
+}
+
+func (c *CPU) di() {
+	c.ime = false
+	c.cycles += 1
+}
+
+func (c *CPU) ei() {
+	c.ime = true
+	c.cycles += 1
+}
+
+func (c *CPU) nop() {
+	c.cycles += 1
+}
+
 func (c *CPU) halt() {
 	c.isHalted = true
 	c.cycles += 1
@@ -943,5 +1056,22 @@ func (c *CPU) writeBit8OperandType(opcode uint8, operandType Bit8ArithmeticOpera
 		c.a = value
 	default:
 		panic(fmt.Sprintf("unsupported bit8 operand type for write: %d", operandType))
+	}
+}
+
+func (c *CPU) decodeConditionFromOpcode(opcode uint8) bool {
+	cc := (opcode >> 3) & 0x3
+
+	switch cc {
+	case 0: // NZ
+		return !c.flags.IsSet(ZeroFlag)
+	case 1: // Z
+		return c.flags.IsSet(ZeroFlag)
+	case 2: // NC
+		return !c.flags.IsSet(CarryFlag)
+	case 3: // C
+		return c.flags.IsSet(CarryFlag)
+	default:
+		panic("not possible")
 	}
 }
