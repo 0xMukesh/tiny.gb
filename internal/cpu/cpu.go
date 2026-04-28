@@ -37,9 +37,13 @@ func NewCPU(prg []uint8) *CPU {
 }
 
 func (c *CPU) Step() {
-	opcode := c.prg[c.pc]
-	c.execute(opcode)
-	c.pc++
+	opcode := c.readNextByte()
+	if opcode == 0xcb {
+		opcode = c.readNextByte()
+		c.executeCb(opcode)
+	} else {
+		c.execute(opcode)
+	}
 }
 
 func (c *CPU) IsHalted() bool {
@@ -60,6 +64,8 @@ func (c *CPU) readR8(idx uint8) uint8 {
 		return c.h
 	case 5:
 		return c.l
+	case 6:
+		return c.memory[c.readHL()]
 	case 7:
 		return c.a
 	default:
@@ -81,6 +87,8 @@ func (c *CPU) writeR8(idx, data uint8) {
 		c.h = data
 	case 5:
 		c.l = data
+	case 6:
+		c.memory[c.readHL()] = data
 	case 7:
 		c.a = data
 	}

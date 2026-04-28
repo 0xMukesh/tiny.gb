@@ -1,14 +1,19 @@
 package cpu
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/0xmukesh/tiny.gb/internal/helpers"
+)
 
 type Bit8ArithmeticOperandType int
 
 const (
-	Bit8R8FirstThree  = iota // 0bxy|abc|(rrr)
-	Bit8R8MiddleThree        // 0bxy|(rrr)|abc
+	Bit8R8FirstThree  Bit8ArithmeticOperandType = iota // 0bxy|abc|(rrr)
+	Bit8R8MiddleThree                                  // 0bxy|(rrr)|abc
 	Bit8HL
 	Bit8N8
+	Bit8A
 )
 
 // opcode = [ x x | y y y | z z z ]
@@ -75,14 +80,17 @@ func (c *CPU) execute(opcode uint8) {
 				c.inc_dec_bit8(opcode, Bit8R8MiddleThree, true)
 			}
 		case 6:
-			switch y {
-			case 6:
-				c.ld_hl_n8()
-			default:
-				c.ld_r8_n8(opcode)
-			}
+			c.ld_r8_n8(opcode)
 		case 7:
 			switch y {
+			case 0:
+				c.rlc(opcode, Bit8A)
+			case 1:
+				c.rrc(opcode, Bit8A)
+			case 2:
+				c.rl(opcode, Bit8A)
+			case 3:
+				c.rr(opcode, Bit8A)
 			case 4:
 				c.daa()
 			case 5:
@@ -219,6 +227,45 @@ func (c *CPU) execute(opcode uint8) {
 				c.cp(opcode, Bit8N8)
 			}
 		}
+	}
+}
+
+func (c *CPU) executeCb(opcode uint8) {
+	x := (opcode >> 6) & 0x3
+	y := (opcode >> 3) & 0x7
+	z := opcode & 0x7
+
+	operandType := Bit8R8FirstThree
+	if z == 6 {
+		operandType = Bit8HL
+	}
+
+	switch x {
+	case 0:
+		switch y {
+		case 0:
+			c.rlc(opcode, operandType)
+		case 1:
+			c.rrc(opcode, operandType)
+		case 2:
+			c.rl(opcode, operandType)
+		case 3:
+			c.rr(opcode, operandType)
+		case 4:
+			c.sla(opcode, operandType)
+		case 5:
+			c.sra(opcode, operandType)
+		case 6:
+			c.swap(opcode, operandType)
+		case 7:
+			c.srl(opcode, operandType)
+		}
+	case 1:
+		c.bit(opcode, operandType)
+	case 2:
+		c.res(opcode, operandType)
+	case 3:
+		c.set(opcode, operandType)
 	}
 }
 
@@ -574,6 +621,252 @@ func (c *CPU) add_sp_e() {
 	c.cycles += 4
 }
 
+func (c *CPU) rlc(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	b7 := (value >> 7) & 0x1
+
+	result := (value << 1) | b7
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	if operandType == Bit8A {
+		c.flags.Unset(ZeroFlag)
+	} else {
+		c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	}
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, b7 != 0)
+
+	switch operandType {
+	case Bit8A:
+		c.cycles += 1
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) rrc(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	b0 := value & 0x1
+
+	result := (value >> 1) | (b0 << 7)
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	if operandType == Bit8A {
+		c.flags.Unset(ZeroFlag)
+	} else {
+		c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	}
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, b0 != 0)
+
+	switch operandType {
+	case Bit8A:
+		c.cycles += 1
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) rl(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	b7 := (value >> 7) & 0x1
+	cf := uint8(0)
+	if c.flags.IsSet(CarryFlag) {
+		cf = 1
+	}
+
+	result := (value << 1) | cf
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	if operandType == Bit8A {
+		c.flags.Unset(ZeroFlag)
+	} else {
+		c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	}
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, b7 != 0)
+
+	switch operandType {
+	case Bit8A:
+		c.cycles += 1
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) rr(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	b0 := value & 0x1
+	cf := uint8(0)
+	if c.flags.IsSet(CarryFlag) {
+		cf = 1
+	}
+
+	result := (value >> 1) | (cf << 7)
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	if operandType == Bit8A {
+		c.flags.Unset(ZeroFlag)
+	} else {
+		c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	}
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, b0 != 0)
+
+	switch operandType {
+	case Bit8A:
+		c.cycles += 1
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) sla(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	b7 := (value >> 7) & 0x1
+
+	result := value << 1
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, b7 != 0)
+
+	switch operandType {
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) sra(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	b7 := value & (0x1 << 7)
+	b0 := value & 0x1
+
+	result := (value >> 1) | b7
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, b0 != 0)
+
+	switch operandType {
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) swap(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	lower := value & 0x0f
+	upper := (value & 0xf0) >> 4
+
+	result := (lower << 4) | upper
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.Unset(CarryFlag)
+
+	switch operandType {
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) srl(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	value := c.readBit8OperandType(opcode, operandType)
+	b0 := value & 0x1
+
+	result := value >> 1
+	c.writeBit8OperandType(opcode, operandType, result)
+
+	c.flags.SetIfCondElseUnset(ZeroFlag, result == 0)
+	c.flags.Unset(SubtractFlag)
+	c.flags.Unset(HalfCarryFlag)
+	c.flags.SetIfCondElseUnset(CarryFlag, b0 != 0)
+
+	switch operandType {
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) bit(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	bit := c.readBit8OperandType(opcode, Bit8R8MiddleThree)
+	value := c.readBit8OperandType(opcode, operandType)
+
+	bf := helpers.NewBitfield(value)
+
+	c.flags.SetIfCondElseUnset(ZeroFlag, !bf.IsSet(1<<bit))
+	c.flags.Unset(SubtractFlag)
+	c.flags.Set(HalfCarryFlag)
+
+	switch operandType {
+	case Bit8HL:
+		c.cycles += 3
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) res(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	bit := c.readBit8OperandType(opcode, Bit8R8MiddleThree)
+	value := c.readBit8OperandType(opcode, operandType)
+
+	bf := helpers.NewBitfield(value)
+	bf.Unset(1 << bit)
+
+	c.writeBit8OperandType(opcode, operandType, uint8(*bf))
+
+	switch operandType {
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
+func (c *CPU) set(opcode uint8, operandType Bit8ArithmeticOperandType) {
+	bit := c.readBit8OperandType(opcode, Bit8R8MiddleThree)
+	value := c.readBit8OperandType(opcode, operandType)
+
+	bf := helpers.NewBitfield(value)
+	bf.Set(1 << bit)
+
+	c.writeBit8OperandType(opcode, operandType, uint8(*bf))
+
+	switch operandType {
+	case Bit8HL:
+		c.cycles += 4
+	default:
+		c.cycles += 2
+	}
+}
+
 func (c *CPU) halt() {
 	c.isHalted = true
 	c.cycles += 1
@@ -631,6 +924,8 @@ func (c *CPU) readBit8OperandType(opcode uint8, operandType Bit8ArithmeticOperan
 		return c.memory[c.readHL()]
 	case Bit8N8:
 		return c.readNextByte()
+	case Bit8A:
+		return c.a
 	default:
 		panic(fmt.Sprintf("unsupported bit8 operand type for read: %d", operandType))
 	}
@@ -644,6 +939,8 @@ func (c *CPU) writeBit8OperandType(opcode uint8, operandType Bit8ArithmeticOpera
 		c.writeR8((opcode>>3)&0x7, value)
 	case Bit8HL:
 		c.memory[c.readHL()] = value
+	case Bit8A:
+		c.a = value
 	default:
 		panic(fmt.Sprintf("unsupported bit8 operand type for write: %d", operandType))
 	}
